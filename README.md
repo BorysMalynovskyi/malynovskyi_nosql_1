@@ -18,18 +18,92 @@
 └── README.md
 ```
 
-## Запуск
+## Передумови
+
+- **Python 3.12**, **MongoDB Shell** (`mongosh`), кластер **MongoDB Atlas**.
+- Датасет [Spotify Tracks Dataset](https://www.kaggle.com/datasets/maharshipandya/spotify-tracks-dataset)
+  — файл `dataset.csv` покласти в корінь проєкту (вручну зі сторінки Kaggle або
+  `kaggle datasets download -d maharshipandya/spotify-tracks-dataset --unzip`).
+
+## Налаштування оточення та запуск
 
 ```powershell
+# 1. Віртуальне середовище + залежності
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-# .env: MONGO_URI=mongodb+srv://...  DB_NAME=spotify
 
-.\.venv\Scripts\python.exe scripts\01_load_data.py     # → tracks_raw
-mongosh $env:MONGO_URI --file scripts\02_transform.js  # → tracks (113 999 док.)
-mongosh $env:MONGO_URI --file queries\part2_queries.js
-mongosh $env:MONGO_URI --file queries\part3_aggregations.js
-mongosh $env:MONGO_URI --file queries\part4_indexes.js
+# 2. Створити .env у корені проєкту:
+#   MONGO_URI=mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/?appName=Cluster0
+#   DB_NAME=spotify
+
+# 3. Покласти dataset.csv у корінь (див. «Передумови»)
+
+# 4. Порядок запуску скриптів
+.\.venv\Scripts\python.exe scripts\01_load_data.py     # CSV → tracks_raw
+mongosh $env:MONGO_URI --file scripts\02_transform.js  # tracks_raw → tracks (113 999 док.)
+mongosh $env:MONGO_URI --file queries\part2_queries.js       # Частина 2
+mongosh $env:MONGO_URI --file queries\part3_aggregations.js  # Частина 3
+mongosh $env:MONGO_URI --file queries\part4_indexes.js       # Частина 4
+```
+
+`01_load_data.py` завантажує CSV у проміжну колекцію `tracks_raw` (плоска
+структура), а `02_transform.js` агрегацією формує цільову колекцію `tracks`.
+
+## Схема даних (колекція `tracks`)
+
+Скрипт `02_transform.js` трансформує плоский `tracks_raw` у документоорієнтовану
+схему: рядок виконавців `"A;B"` → масив `artists`; 12 аудіофіч згруповано у
+вкладений об'єкт `audio_features`; додано обчислювані `duration_sec` і
+`popularity_tier`; прибрано сирий рядок артистів та плоскі аудіофічі.
+
+| Поле | Тип | Опис |
+|---|---|---|
+| `track_id` | string | ідентифікатор треку |
+| `track_name`, `album_name` | string | назва треку / альбому |
+| `artists` | string[] | масив виконавців |
+| `track_genre` | string | жанр |
+| `popularity` | int | популярність 0–100 |
+| `duration_ms` | int | тривалість, мс |
+| `explicit` | bool | наявність explicit-контенту |
+| `audio_features` | object | 12 аудіохарактеристик (див. нижче) |
+| `duration_sec` | double | тривалість у секундах (обчислюване, 1 знак) |
+| `popularity_tier` | string | `high` ≥70 / `medium` 40–69 / `low` <40 (обчислюване) |
+
+`audio_features`: `danceability`, `energy`, `loudness`, `speechiness`,
+`acousticness`, `instrumentalness`, `liveness`, `valence`, `tempo`, `key`,
+`mode`, `time_signature`.
+
+Приклад документа:
+
+```json
+{
+  "_id": "6a1fd6867b5419af4573e4ca",
+  "track_id": "5SuOikwiRyPMVoIQDJUgSV",
+  "album_name": "Comedy",
+  "track_name": "Comedy",
+  "popularity": 73,
+  "duration_ms": 230666,
+  "explicit": false,
+  "track_genre": "acoustic",
+  "artists": ["Gen Hoshino"],
+  "audio_features": {
+    "danceability": 0.676,
+    "energy": 0.461,
+    "loudness": -6.746,
+    "speechiness": 0.143,
+    "acousticness": 0.0322,
+    "instrumentalness": 0.00000101,
+    "liveness": 0.358,
+    "valence": 0.715,
+    "tempo": 87.917,
+    "key": 1,
+    "mode": 0,
+    "time_signature": 4
+  },
+  "duration_sec": 230.7,
+  "popularity_tier": "high"
+}
 ```
 
 ---
